@@ -292,3 +292,46 @@ fn protocol_error_gets_error_reply() {
     stream.read_to_string(&mut reply).unwrap();
     assert!(reply.starts_with("-ERR Protocol error:"), "got: {reply}");
 }
+
+#[test]
+fn bundled_redis_cli_single_commands() {
+    let s = Server::start();
+    let run = |cmd: &[&str]| {
+        let port = s.port.to_string();
+        let mut argv: Vec<&str> = vec!["-p", &port];
+        argv.extend_from_slice(cmd);
+        String::from_utf8_lossy(
+            &Command::new(env!("CARGO_BIN_EXE_redis-cli"))
+                .args(&argv)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .to_string()
+    };
+    assert_eq!(run(&["ping"]).trim(), "PONG");
+    assert_eq!(run(&["set", "foo", "bar"]).trim(), "OK");
+    assert_eq!(run(&["get", "foo"]).trim(), "\"bar\"");
+    assert_eq!(run(&["get", "missing"]).trim(), "(nil)");
+    assert_eq!(run(&["del", "foo"]).trim(), "(integer) 1");
+    assert_eq!(run(&["hgetall", "nope"]).trim(), "(empty array)");
+}
+
+#[test]
+fn bundled_redis_cli_piped_mode() {
+    let s = Server::start();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_redis-cli"))
+        .args(["-p", &s.port.to_string()])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"ping\nset foo bar\nget foo\nquit\n")
+        .unwrap();
+    let out = String::from_utf8_lossy(&child.wait_with_output().unwrap().stdout).to_string();
+    assert_eq!(out, "PONG\nOK\n\"bar\"\n");
+}
