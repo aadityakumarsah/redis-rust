@@ -42,33 +42,50 @@ Minimal · Concurrent · Persisted · Tested
   (tmp + rename); loads on boot; optional time-based autosave
 - **Concurrency** — thread-per-client, shared store behind a single `Mutex`,
   buffered I/O, TCP_NODELAY
+- **Bundled `redis-cli`** — an interactive REPL with real Redis-style output
+  (`PONG`, `"value"`, `(nil)`, `(integer) N`, numbered arrays), quote-aware
+  argument parsing, and one-shot `redis-cli ping` usage — no external client,
+  no Docker needed
 - **Redis-compatible errors** — `WRONGTYPE`, arity errors, overflow errors,
   and integer-parsing errors match real Redis semantics
-- **Fully tested** — 43 tests: unit tests per module + end-to-end TCP
+- **Fully tested** — 47 tests: unit tests per module + end-to-end TCP
   integration tests that spawn the real binary
 
 ## Quick Start
 
 ```sh
-# build & run (release)
+# terminal 1 — build & run the server
 cargo run --release -- --port 6379
 
-# in another terminal — works with any RESP client
-redis-cli ping
-redis-cli set user:1 alice
-redis-cli get user:1
+# terminal 2 — bundled redis-cli (interactive, like the real thing)
+cargo run --release --bin redis-cli
 ```
 
 ```
-$ redis-cli ping
+$ cargo run --release --bin redis-cli
+127.0.0.1:6379> ping
 PONG
-$ redis-cli set user:1 alice
+127.0.0.1:6379> set user:1 alice
 OK
-$ redis-cli get user:1
+127.0.0.1:6379> get user:1
 "alice"
+127.0.0.1:6379> exit
 ```
 
-No `redis-cli`? Raw RESP works too:
+One-shot usage — no interactive shell needed:
+
+```sh
+cargo run --release --bin redis-cli ping     # → PONG
+cargo run --release --bin redis-cli get foo   # → "value" / (nil)
+# custom host/port:
+cargo run --release --bin redis-cli -p 6380 -h 127.0.0.1 ping
+```
+
+The bundled CLI supports quoting (`set msg "hello world"`), a
+`127.0.0.1:6379>` prompt, and real redis-cli output formatting — no external
+client or Docker required.
+
+Raw RESP also works with any tool that speaks bytes:
 
 ```sh
 printf '*3\r\n$3\r\nSET\r\n$5\r\nuser:1\r\n$5\r\nalice\r\n' | nc 127.0.0.1 6379
@@ -169,6 +186,14 @@ cargo run --release -- --port 6379 --dir ./data --dbfilename dump.rdb --save-sec
 | `LINDEX key index` | value / `(nil)` |
 
 ## Examples
+
+All examples use the bundled CLI — the shortest path is the interactive
+prompt, or use one-shot mode:
+
+```sh
+cargo run --release --bin redis-cli incr visits     # (integer) 1
+cargo run --release --bin redis-cli get visits      # "1"
+```
 
 ```sh
 # counters
@@ -282,15 +307,16 @@ S|<type>
 cargo test
 ```
 
-43 tests, all green:
+47 tests, all green:
 
 - **Unit** — RESP codec round-trips, partial frames, protocol errors,
   pipelined decoding; store TTL/expiry, counters, hash/list semantics,
   glob matching; command dispatch arity/errors; snapshot round-trips and
-  corruption handling
-- **Integration** (spawns the real binary over TCP) — basic flows, all data
+  corruption handling; bundled CLI argument tokenizing (quotes, escapes)
+- **Integration** (spawns the real binaries over TCP) — basic flows, all data
   types, expiry, wrong-type errors, 8 concurrent clients, pipelined commands
-  in one packet, persistence across restart, protocol-error replies
+  in one packet, persistence across restart, protocol-error replies, and the
+  bundled `redis-cli` in both one-shot and piped/interactive modes
 
 ## Project Layout
 
@@ -298,15 +324,17 @@ cargo test
 .
 ├── Cargo.toml
 ├── src/
-│   ├── main.rs         entry point, exit codes
-│   ├── config.rs       CLI configuration
-│   ├── server.rs       TCP accept loop, per-client threads
-│   ├── resp.rs         RESP wire protocol (encode/decode)
-│   ├── store.rs        thread-safe store, TTL, hashes, lists
-│   ├── commands.rs     command dispatch table
-│   └── snapshot.rs     persistence format
+│   ├── main.rs           server entry point, exit codes
+│   ├── config.rs         CLI configuration
+│   ├── server.rs         TCP accept loop, per-client threads
+│   ├── resp.rs           RESP wire protocol (encode/decode)
+│   ├── store.rs          thread-safe store, TTL, hashes, lists
+│   ├── commands.rs       command dispatch table
+│   ├── snapshot.rs       persistence format
+│   └── bin/
+│       └── redis-cli.rs  bundled interactive client (real redis-cli style)
 └── tests/
-    └── integration.rs  end-to-end TCP tests
+    └── integration.rs    end-to-end TCP tests
 ```
 
 ## License
