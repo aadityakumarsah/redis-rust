@@ -1,0 +1,8 @@
+[package]
+name = "redis-server"
+version = "0.1.0"
+edition = "2021"
+description = "A Redis-compatible server written in pure Rust (std only)"
+license = "MIT"
+
+[dependencies]
